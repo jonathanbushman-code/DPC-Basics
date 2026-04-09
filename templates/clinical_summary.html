@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: letter;
+            margin: 0.75in;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            color: #1a1a1a;
+            line-height: 1.4;
+        }
+        .header {
+            border-bottom: 3px solid #0056b3;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #0056b3;
+            font-size: 18pt;
+            margin: 0 0 4px 0;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 11pt;
+        }
+        .header .date {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #333;
+        }
+        .stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            flex: 1;
+            min-width: 120px;
+            background: #f0f4f8;
+            border-radius: 6px;
+            padding: 12px 16px;
+            text-align: center;
+        }
+        .stat-card .value {
+            font-size: 22pt;
+            font-weight: bold;
+            color: #0056b3;
+        }
+        .stat-card .label {
+            font-size: 8pt;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        h2 {
+            color: #0056b3;
+            font-size: 13pt;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 4px;
+            margin-top: 20px;
+        }
+        h3 {
+            color: #333;
+            font-size: 11pt;
+            margin: 12px 0 6px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 9pt;
+        }
+        th {
+            background: #0056b3;
+            color: white;
+            padding: 6px 8px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 5px 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 8pt;
+            font-weight: 600;
+        }
+        .status-scheduled { background: #cce5ff; color: #004085; }
+        .status-confirmed { background: #d4edda; color: #155724; }
+        .status-checked-in { background: #fff3cd; color: #856404; }
+        .status-completed { background: #d1ecf1; color: #0c5460; }
+        .status-cancelled { background: #f8d7da; color: #721c24; }
+        .status-not-seen { background: #e2e3e5; color: #383d41; }
+        .footer {
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 8pt;
+            color: #888;
+            text-align: center;
+        }
+        .time-block {
+            margin-bottom: 16px;
+        }
+        .provider-section {
+            page-break-inside: avoid;
+            margin-bottom: 20px;
+        }
+        .status-summary {
+            margin-bottom: 16px;
+        }
+        .status-summary table {
+            width: auto;
+        }
+        .status-summary td:last-child {
+            text-align: right;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Clinical Analytics Summary</h1>
+        <div class="subtitle">Daily Practice Appointment Report</div>
+        <div class="date">{{ report_date }}</div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ stats.total_appointments }}</div>
+            <div class="label">Total Appointments</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ stats.unique_patients }}</div>
+            <div class="label">Unique Patients</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ stats.unique_providers }}</div>
+            <div class="label">Providers</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ stats.total_duration_hours }}h</div>
+            <div class="label">Clinical Hours</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ stats.avg_duration_minutes }}m</div>
+            <div class="label">Avg Duration</div>
+        </div>
+    </div>
+
+    <!-- Status Breakdown -->
+    <h2>Appointment Status Overview</h2>
+    <div class="status-summary">
+        <table>
+            <tr><th>Status</th><th>Count</th></tr>
+            {% for status, count in stats.status_breakdown.items() %}
+            <tr>
+                <td><span class="status-badge status-{{ status|lower|replace(' ', '-') }}">{{ status }}</span></td>
+                <td>{{ count }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <!-- Schedule by Time Block -->
+    <h2>Schedule by Time Block</h2>
+    {% for block_name, block_appts in time_blocks.items() %}
+    <div class="time-block">
+        <h3>{{ block_name }} ({{ block_appts|length }} appointments)</h3>
+        <table>
+            <tr>
+                <th>Time</th>
+                <th>Patient</th>
+                <th>Provider</th>
+                <th>Reason</th>
+                <th>Duration</th>
+                <th>Status</th>
+            </tr>
+            {% for appt in block_appts %}
+            <tr>
+                <td>{{ appt.scheduled_time }}</td>
+                <td>{{ appt.patient_name }}</td>
+                <td>{{ appt.provider_name }}</td>
+                <td>{{ appt.reason or "N/A" }}</td>
+                <td>{{ appt.duration or "N/A" }} min</td>
+                <td><span class="status-badge status-{{ appt.status_class }}">{{ appt.status_text }}</span></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endfor %}
+
+    <!-- Provider Breakdown -->
+    <h2>Provider Breakdown</h2>
+    {% for provider_name, provider_appts in providers.items() %}
+    <div class="provider-section">
+        <h3>{{ provider_name }} ({{ provider_appts|length }} appointments)</h3>
+        <table>
+            <tr>
+                <th>Time</th>
+                <th>Patient</th>
+                <th>Reason</th>
+                <th>Duration</th>
+                <th>Status</th>
+            </tr>
+            {% for appt in provider_appts %}
+            <tr>
+                <td>{{ appt.scheduled_time }}</td>
+                <td>{{ appt.patient_name }}</td>
+                <td>{{ appt.reason or "N/A" }}</td>
+                <td>{{ appt.duration or "N/A" }} min</td>
+                <td><span class="status-badge status-{{ appt.status_class }}">{{ appt.status_text }}</span></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endfor %}
+
+    <div class="footer">
+        Generated {{ generated_at }} | Clinical Analytics Summary | Confidential
+    </div>
+</body>
+</html>
