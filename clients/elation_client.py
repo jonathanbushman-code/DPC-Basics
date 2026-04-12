@@ -1,4 +1,4 @@
-"""Elation Health API client for OAuth authentication and appointment retrieval."""
+"""Elation Health API client for OAuth authentication, appointments, fax inbox, and document filing."""
 
 import logging
 import time
@@ -147,3 +147,162 @@ class ElationClient:
             appt["physician_detail"] = physician_cache.get(physician_id, {})
 
         return appointments
+
+    # ── Fax Inbox Methods ──────────────────────────────────────────────
+
+    def get_received_faxes(self, filing_status: str = "new") -> list[dict]:
+        """Fetch received faxes from the Elation fax inbox.
+
+        Args:
+            filing_status: Filter by filing status. Use "new" for unfiled faxes.
+
+        Returns:
+            List of received fax dictionaries.
+        """
+        params = {}
+        if filing_status:
+            params["filing_status"] = filing_status
+
+        logger.info("Fetching received faxes (status=%s)", filing_status)
+        faxes = self._get_paginated(self.config.RECEIVED_FAXES_ENDPOINT, params)
+        logger.info("Fetched %d received faxes", len(faxes))
+        return faxes
+
+    def get_received_fax(self, fax_id: int) -> dict:
+        """Fetch a single received fax by ID."""
+        self._ensure_authenticated()
+        url = f"{self.config.RECEIVED_FAXES_ENDPOINT}{fax_id}/"
+        response = self.session.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    def download_fax_document(self, document_url: str) -> bytes:
+        """Download the PDF content of a received fax.
+
+        Args:
+            document_url: The URL to the fax document PDF.
+
+        Returns:
+            Raw PDF bytes.
+        """
+        self._ensure_authenticated()
+        response = self.session.get(document_url)
+        response.raise_for_status()
+        return response.content
+
+    def update_received_fax(self, fax_id: int, data: dict) -> dict:
+        """Update a received fax record (e.g. mark as filed).
+
+        Args:
+            fax_id: The fax ID to update.
+            data: Fields to update (e.g. filing_status, patient, document_type).
+
+        Returns:
+            Updated fax record.
+        """
+        self._ensure_authenticated()
+        url = f"{self.config.RECEIVED_FAXES_ENDPOINT}{fax_id}/"
+        response = self.session.patch(url, json=data)
+        response.raise_for_status()
+        time.sleep(0.4)
+        return response.json()
+
+    # ── Patient Search Methods ─────────────────────────────────────────
+
+    def search_patients(
+        self,
+        first_name: str = None,
+        last_name: str = None,
+        dob: str = None,
+        search: str = None,
+    ) -> list[dict]:
+        """Search for patients by name, date of birth, or general search term.
+
+        Args:
+            first_name: Patient first name filter.
+            last_name: Patient last name filter.
+            dob: Date of birth in YYYY-MM-DD format.
+            search: General search term.
+
+        Returns:
+            List of matching patient dictionaries.
+        """
+        self._ensure_authenticated()
+        params = {}
+        if first_name:
+            params["first_name"] = first_name
+        if last_name:
+            params["last_name"] = last_name
+        if dob:
+            params["dob"] = dob
+        if search:
+            params["search"] = search
+
+        logger.info("Searching patients with params: %s", params)
+        results = self._get_paginated(self.config.PATIENTS_ENDPOINT, params)
+        logger.info("Found %d matching patients", len(results))
+        return results
+
+    # ── Document Filing Methods ────────────────────────────────────────
+
+    def create_document(
+        self,
+        patient_id: int,
+        document_type: str,
+        file_content: bytes,
+        filename: str,
+        physician_id: int = None,
+        description: str = "",
+        document_date: str = None,
+        chart_date: str = None,
+    ) -> dict:
+        """Create a document in a patient's chart.
+
+        Args:
+            patient_id: The patient to file the document under.
+            document_type: The category (e.g. "Lab Report", "Referral Letter").
+            file_content: Raw file bytes (typically PDF).
+            filename: Name of the file being uploaded.
+            physician_id: Provider to assign for review/sign-off.
+            description: Description of the document.
+            document_date: Date of the document (YYYY-MM-DD).
+            chart_date: Date to display on the chart (YYYY-MM-DD).
+
+        Returns:
+            Created document record from Elation.
+        """
+        self._ensure_authenticated()
+
+        if not document_date:
+            document_date = datetime.utcnow().strftime("%Y-%m-%d")
+        if not chart_date:
+            chart_date = document_date
+
+        data = {
+            "patient": patient_id,
+            "document_type": document_type,
+            "document_date": document_date,
+            "chart_date": chart_date,
+            "description": description,
+        }
+        if physician_id:
+            data["sign_off_physician"] = physician_id
+
+        files = {
+            "file": (filename, file_content, "application/pdf"),
+        }
+
+        response = self.session.post(
+            self.config.DOCUMENTS_ENDPOINT,
+            data=data,
+            files=files,
+        )
+        response.raise_for_status()
+        time.sleep(0.4)
+        logger.info(
+            "Document created for patient %d (type=%s, assigned to physician=%s)",
+            patient_id,
+            document_type,
+            physician_id,
+        )
+        return response.json()
