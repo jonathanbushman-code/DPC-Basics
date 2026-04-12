@@ -115,6 +115,63 @@ class ElationClient:
         response.raise_for_status()
         return response.json()
 
+    def get_checked_out_appointments(self, target_date: datetime) -> list[dict]:
+        """Fetch today's appointments and filter for 'Checked Out' status.
+
+        Returns enriched appointment records (with patient details) that have
+        a checked-out status, so the caller can extract phone numbers and names.
+        """
+        appointments = self.get_appointments_for_date(target_date)
+        checked_out = []
+        for appt in appointments:
+            status_obj = appt.get("status", {})
+            if isinstance(status_obj, dict):
+                status_name = status_obj.get("status", "")
+            else:
+                status_name = str(status_obj)
+
+            if status_name.lower().replace(" ", "") in (
+                "checkedout",
+                "checked_out",
+                "checkout",
+            ):
+                checked_out.append(appt)
+
+        if checked_out:
+            checked_out = self.enrich_appointments(checked_out)
+
+        logger.info(
+            "Found %d checked-out appointments out of %d total",
+            len(checked_out),
+            len(appointments),
+        )
+        return checked_out
+
+    def create_webhook_subscription(self, target_url: str, event: str = "app.appointments") -> dict:
+        """Register a webhook subscription with Elation for appointment events.
+
+        This is an alternative to polling. Requires a publicly accessible
+        target_url to receive POST callbacks from Elation.
+
+        Args:
+            target_url: The publicly accessible URL to receive webhook events.
+            event: The Elation event resource to subscribe to.
+
+        Returns:
+            The subscription object from the Elation API.
+        """
+        self._ensure_authenticated()
+        url = f"{self.config.BASE_URL}/subscriptions/"
+        payload = {
+            "target": target_url,
+            "resource": event,
+        }
+        response = self.session.post(url, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        logger.info("Webhook subscription created: %s -> %s", event, target_url)
+        return data
+
     def enrich_appointments(self, appointments: list[dict]) -> list[dict]:
         """Enrich appointment records with patient and physician details.
 

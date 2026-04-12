@@ -94,6 +94,98 @@ class SpruceClient:
         logger.info("Message sent to conversation %s", conv_id)
         return response.json()
 
+    def get_internal_endpoint_id(self) -> str:
+        """Retrieve the organization's SMS-capable internal endpoint ID.
+
+        Spruce requires an internal endpoint (the practice's Spruce phone
+        number) to send outbound SMS. This method fetches available endpoints
+        and returns the first SMS-capable one.
+
+        The result is cached on the instance for subsequent calls.
+
+        Returns:
+            The internal endpoint ID string.
+
+        Raises:
+            RuntimeError: If no SMS-capable endpoint is found.
+        """
+        if hasattr(self, "_internal_endpoint_id") and self._internal_endpoint_id:
+            return self._internal_endpoint_id
+
+        # Allow override via environment variable
+        configured_id = self.config.INTERNAL_ENDPOINT_ID
+        if configured_id:
+            self._internal_endpoint_id = configured_id
+            return configured_id
+
+        url = f"{self.config.BASE_URL}/v1/internalEndpoints"
+        response = self.session.get(url)
+        response.raise_for_status()
+        endpoints = response.json()
+
+        # Find an SMS-capable endpoint (phone number)
+        for ep in endpoints:
+            ep_type = ep.get("type", "")
+            if ep_type in ("phone", "sms"):
+                self._internal_endpoint_id = ep["id"]
+                logger.info(
+                    "Discovered Spruce internal endpoint: %s (%s)",
+                    ep["id"],
+                    ep.get("address", ""),
+                )
+                return self._internal_endpoint_id
+
+        # Fallback: use the first endpoint if types aren't labeled
+        if endpoints:
+            self._internal_endpoint_id = endpoints[0]["id"]
+            logger.warning(
+                "No explicitly SMS-typed endpoint found; using first endpoint: %s",
+                self._internal_endpoint_id,
+            )
+            return self._internal_endpoint_id
+
+        raise RuntimeError(
+            "No internal endpoints found in Spruce. "
+            "Ensure your organization has an SMS-capable phone number configured."
+        )
+
+    def send_patient_sms(self, phone_number: str, message: str) -> dict:
+        """Send an outbound SMS message to a patient via Spruce.
+
+        Uses the Spruce internal endpoint to initiate an SMS conversation
+        with the patient. If a conversation already exists with this phone
+        number, Spruce will match it automatically.
+
+        Args:
+            phone_number: The patient's phone number (E.164 format preferred,
+                e.g. '+15551234567'). Digits-only is also accepted and will
+                be normalized.
+            message: The text message body to send.
+
+        Returns:
+            The API response as a dictionary.
+        """
+        # Normalize phone number to E.164 if just digits were provided
+        digits = "".join(c for c in phone_number if c.isdigit())
+        if len(digits) == 10:
+            digits = "1" + digits
+        if not phone_number.startswith("+"):
+            phone_number = f"+{digits}"
+
+        endpoint_id = self.get_internal_endpoint_id()
+        url = f"{self.config.BASE_URL}/v1/internalEndpoints/{endpoint_id}/conversations"
+        payload = {
+            "destination": {
+                "smsOrEmailEndpoint": phone_number,
+            },
+            "body": [{"type": "text", "value": message}],
+        }
+
+        response = self.session.post(url, json=payload)
+        response.raise_for_status()
+        logger.info("SMS sent to %s via Spruce endpoint %s", phone_number, endpoint_id)
+        return response.json()
+
     def send_summary_document(
         self,
         file_path: str,

@@ -18,6 +18,7 @@ class SpruceConfig:
     API_TOKEN = os.getenv("SPRUCE_API_TOKEN", "")
     BASE_URL = os.getenv("SPRUCE_API_BASE_URL", "https://api.sprucehealth.com")
     CONVERSATION_ID = os.getenv("SPRUCE_CONVERSATION_ID", "")
+    INTERNAL_ENDPOINT_ID = os.getenv("SPRUCE_INTERNAL_ENDPOINT_ID", "")
     UPLOAD_MEDIA_ENDPOINT = f"{BASE_URL}/v1/media"
     POST_MESSAGE_ENDPOINT = f"{BASE_URL}/v1/conversations/{CONVERSATION_ID}/messages"
 
@@ -28,6 +29,18 @@ class ScheduleConfig:
     FETCH_MINUTE = int(os.getenv("FETCH_MINUTE", "1"))
     SEND_HOUR = int(os.getenv("SEND_HOUR", "7"))
     SEND_MINUTE = int(os.getenv("SEND_MINUTE", "0"))
+    CHECKOUT_POLL_INTERVAL_MINUTES = int(os.getenv("CHECKOUT_POLL_INTERVAL_MINUTES", "5"))
+    CHECKOUT_POLL_START_HOUR = int(os.getenv("CHECKOUT_POLL_START_HOUR", "7"))
+    CHECKOUT_POLL_END_HOUR = int(os.getenv("CHECKOUT_POLL_END_HOUR", "19"))
+
+
+class ReviewRequestConfig:
+    GOOGLE_REVIEW_URL = os.getenv(
+        "GOOGLE_REVIEW_URL",
+        "https://g.page/r/CWIudlNSwpwpEBM/review",
+    )
+    PRACTICE_NAME = os.getenv("PRACTICE_NAME", "Reliant Direct Primary Care")
+    PROCESSED_FILE = os.getenv("REVIEW_PROCESSED_FILE", "./data/processed_checkouts.json")
 
 
 SUMMARY_OUTPUT_DIR = os.getenv("SUMMARY_OUTPUT_DIR", "./output")

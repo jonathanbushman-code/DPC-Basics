@@ -4,11 +4,13 @@ This agent runs on a schedule to:
 1. Fetch today's appointments from Elation Health at 12:01 AM
 2. Generate a clinical analytics summary PDF
 3. Send the summary to a specific Spruce Health user at 7:00 AM
+4. Poll for checked-out appointments and send Google review requests via SMS
 """
 
 import logging
 import os
 import sys
+from datetime import datetime
 
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -17,6 +19,7 @@ from config import ScheduleConfig, SUMMARY_OUTPUT_DIR
 from services.appointment_service import AppointmentService
 from services.analytics_service import AnalyticsService
 from services.notification_service import NotificationService
+from services.review_request_service import ReviewRequestService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +78,40 @@ def send_summary():
         logger.exception("Failed to send summary via Spruce")
 
 
+def check_checkouts_and_send_reviews():
+    """Interval job: Poll for checked-out appointments and send review requests.
+
+    Runs every N minutes during business hours. Detects appointments that
+    have transitioned to 'Checked Out' status and sends each patient a
+    thank-you SMS with a Google review link via Spruce.
+    """
+    # Only run during configured business hours
+    tz = pytz.timezone(ScheduleConfig.TIMEZONE)
+    now_local = datetime.now(tz)
+    if not (
+        ScheduleConfig.CHECKOUT_POLL_START_HOUR
+        <= now_local.hour
+        < ScheduleConfig.CHECKOUT_POLL_END_HOUR
+    ):
+        logger.debug(
+            "Outside business hours (%02d:00-%02d:00), skipping checkout poll",
+            ScheduleConfig.CHECKOUT_POLL_START_HOUR,
+            ScheduleConfig.CHECKOUT_POLL_END_HOUR,
+        )
+        return
+
+    logger.info("--- Checking for new checked-out appointments ---")
+    try:
+        review_service = ReviewRequestService()
+        sent = review_service.process_checked_out_appointments()
+        if sent:
+            logger.info("Sent %d review request(s)", sent)
+        else:
+            logger.debug("No new review requests to send")
+    except Exception:
+        logger.exception("Error in checkout review request polling")
+
+
 def run_once():
     """Run both steps immediately (for testing or manual execution)."""
     logger.info("Running in single-execution mode")
@@ -83,6 +120,8 @@ def run_once():
         send_summary()
     else:
         logger.error("No summary generated, skipping send")
+    # Also run a single checkout review check
+    check_checkouts_and_send_reviews()
 
 
 def main():
@@ -114,12 +153,30 @@ def main():
         misfire_grace_time=300,
     )
 
+    scheduler.add_job(
+        check_checkouts_and_send_reviews,
+        "interval",
+        minutes=ScheduleConfig.CHECKOUT_POLL_INTERVAL_MINUTES,
+        id="checkout_review_poll",
+        name=(
+            f"Poll for checkouts every "
+            f"{ScheduleConfig.CHECKOUT_POLL_INTERVAL_MINUTES}min "
+            f"({ScheduleConfig.CHECKOUT_POLL_START_HOUR}:00-"
+            f"{ScheduleConfig.CHECKOUT_POLL_END_HOUR}:00)"
+        ),
+        misfire_grace_time=120,
+    )
+
     logger.info(
-        "Scheduler started. Fetch at %02d:%02d, Send at %02d:%02d (%s)",
+        "Scheduler started. Fetch at %02d:%02d, Send at %02d:%02d, "
+        "Checkout poll every %d min (%02d:00-%02d:00) (%s)",
         ScheduleConfig.FETCH_HOUR,
         ScheduleConfig.FETCH_MINUTE,
         ScheduleConfig.SEND_HOUR,
         ScheduleConfig.SEND_MINUTE,
+        ScheduleConfig.CHECKOUT_POLL_INTERVAL_MINUTES,
+        ScheduleConfig.CHECKOUT_POLL_START_HOUR,
+        ScheduleConfig.CHECKOUT_POLL_END_HOUR,
         ScheduleConfig.TIMEZONE,
     )
     logger.info("Press Ctrl+C to exit")
