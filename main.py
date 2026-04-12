@@ -1,9 +1,10 @@
-"""Daily Clinical Analytics Summary Agent.
+"""Clinical Analytics & Weekly Phone Report Agent.
 
 This agent runs on a schedule to:
 1. Fetch today's appointments from Elation Health at 12:01 AM
 2. Generate a clinical analytics summary PDF
 3. Send the summary to a specific Spruce Health user at 7:00 AM
+4. Generate a weekly Spruce phone & messaging report every Monday
 """
 
 import logging
@@ -17,6 +18,7 @@ from config import ScheduleConfig, SUMMARY_OUTPUT_DIR
 from services.appointment_service import AppointmentService
 from services.analytics_service import AnalyticsService
 from services.notification_service import NotificationService
+from services.weekly_report_service import WeeklyReportService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +77,32 @@ def send_summary():
         logger.exception("Failed to send summary via Spruce")
 
 
+def generate_and_send_weekly_report():
+    """Weekly job: Generate the Spruce phone/SMS report and deliver it."""
+    logger.info("=== Starting weekly phone & messaging report ===")
+
+    try:
+        report_service = WeeklyReportService()
+        report_path = report_service.generate_weekly_report()
+        logger.info("Weekly report generated: %s", report_path)
+
+        # Deliver the report via Spruce
+        notification_service = NotificationService()
+        message = (
+            "Weekly Phone & Messaging Report is ready. "
+            "See the attached document for call volume, SMS activity, "
+            "hourly distribution, and missed-call details."
+        )
+        notification_service.spruce.send_summary_document(
+            file_path=report_path,
+            message_text=message,
+        )
+        logger.info("Weekly report delivered successfully")
+
+    except Exception:
+        logger.exception("Failed to generate or send weekly report")
+
+
 def run_once():
     """Run both steps immediately (for testing or manual execution)."""
     logger.info("Running in single-execution mode")
@@ -91,9 +119,15 @@ def main():
         run_once()
         return
 
+    if "--weekly-report" in sys.argv:
+        logger.info("Running weekly report in single-execution mode")
+        generate_and_send_weekly_report()
+        return
+
     tz = pytz.timezone(ScheduleConfig.TIMEZONE)
     scheduler = BlockingScheduler(timezone=tz)
 
+    # Daily appointment summary jobs
     scheduler.add_job(
         fetch_and_generate,
         "cron",
@@ -114,6 +148,18 @@ def main():
         misfire_grace_time=300,
     )
 
+    # Weekly phone & messaging report (default: Monday 7:30 AM)
+    scheduler.add_job(
+        generate_and_send_weekly_report,
+        "cron",
+        day_of_week=ScheduleConfig.WEEKLY_REPORT_DAY,
+        hour=ScheduleConfig.WEEKLY_REPORT_HOUR,
+        minute=ScheduleConfig.WEEKLY_REPORT_MINUTE,
+        id="weekly_report",
+        name="Generate and send weekly phone/SMS report",
+        misfire_grace_time=600,
+    )
+
     logger.info(
         "Scheduler started. Fetch at %02d:%02d, Send at %02d:%02d (%s)",
         ScheduleConfig.FETCH_HOUR,
@@ -121,6 +167,12 @@ def main():
         ScheduleConfig.SEND_HOUR,
         ScheduleConfig.SEND_MINUTE,
         ScheduleConfig.TIMEZONE,
+    )
+    logger.info(
+        "Weekly report scheduled: %s at %02d:%02d",
+        ScheduleConfig.WEEKLY_REPORT_DAY.upper(),
+        ScheduleConfig.WEEKLY_REPORT_HOUR,
+        ScheduleConfig.WEEKLY_REPORT_MINUTE,
     )
     logger.info("Press Ctrl+C to exit")
 

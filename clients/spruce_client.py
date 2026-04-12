@@ -1,7 +1,8 @@
-"""Spruce Health API client for uploading media and sending messages."""
+"""Spruce Health API client for uploading media, sending messages, and fetching logs."""
 
 import logging
 import os
+import time
 
 import requests
 
@@ -9,12 +10,15 @@ from config import SpruceConfig
 
 logger = logging.getLogger(__name__)
 
+# Delay between paginated API requests to respect rate limits
+_RATE_LIMIT_DELAY = 0.4
+
 
 class SpruceClient:
     """Client for interacting with the Spruce Health REST API.
 
     Handles Bearer token authentication and provides methods to upload
-    documents and send messages to Spruce conversations.
+    documents, send messages, and retrieve call/message logs.
     """
 
     def __init__(self):
@@ -120,3 +124,84 @@ class SpruceClient:
             attachment_ids=[media_id],
             internal=True,
         )
+
+    # ------------------------------------------------------------------
+    # Data retrieval methods for weekly reports
+    # ------------------------------------------------------------------
+
+    def _paginate(self, url: str, params: dict) -> list[dict]:
+        """Fetch all pages from a paginated Spruce endpoint.
+
+        Spruce uses token-based pagination: responses include ``hasMore``
+        and ``paginationToken``.  Pass the token back as a query parameter
+        to retrieve subsequent pages.
+        """
+        all_records: list[dict] = []
+        while True:
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            body = response.json()
+
+            # Records may live under "data", "results", or at the top level
+            records = body.get("data") or body.get("results") or []
+            all_records.extend(records)
+
+            has_more = body.get("hasMore", False)
+            token = body.get("paginationToken")
+            if not has_more or not token:
+                break
+            params["paginationToken"] = token
+            time.sleep(_RATE_LIMIT_DELAY)
+
+        return all_records
+
+    def get_conversations(self, start_from: str = None) -> list[dict]:
+        """List conversations, optionally filtered from a start time.
+
+        Spruce models all communications (calls, SMS, fax, secure messages)
+        as conversations.  Each conversation has items (individual call
+        records, text messages, etc.).
+
+        Args:
+            start_from: ISO-8601 datetime to fetch conversations from.
+
+        Returns:
+            List of conversation dicts.
+        """
+        params = {"order": "created"}
+        if start_from:
+            params["startFrom"] = start_from
+        records = self._paginate(self.config.CONVERSATIONS_ENDPOINT, params)
+        logger.info("Fetched %d conversations", len(records))
+        return records
+
+    def get_conversation_item(self, item_id: str) -> dict:
+        """Fetch a single conversation item (call record, message, etc.).
+
+        The response includes event data with call-specific fields like
+        ``answered``, ``duration``, ``failed``, ``initiatedBy``, and
+        ``recordings`` for call-type items.
+
+        Args:
+            item_id: The conversation-item ID.
+
+        Returns:
+            The conversation-item dict.
+        """
+        url = f"{self.config.CONVERSATION_ITEMS_ENDPOINT}/{item_id}"
+        response = self.session.get(url)
+        response.raise_for_status()
+        return response.json()
+
+    def get_internal_endpoints(self) -> list[dict]:
+        """List all internal endpoints (phone numbers, fax, email, Spruce links).
+
+        These represent the org's communication channels — the phone numbers
+        correspond to the physical phones at each desk.
+
+        Returns:
+            List of endpoint dicts with id, label/name, address/number, type.
+        """
+        records = self._paginate(self.config.INTERNAL_ENDPOINTS_ENDPOINT, {})
+        logger.info("Fetched %d internal endpoints", len(records))
+        return records

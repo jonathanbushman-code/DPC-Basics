@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page {
+            size: letter landscape;
+            margin: 0.5in;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            color: #1a1a1a;
+            line-height: 1.4;
+        }
+        .header {
+            border-bottom: 3px solid #0056b3;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #0056b3;
+            font-size: 18pt;
+            margin: 0 0 4px 0;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 11pt;
+        }
+        .header .date-range {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* ---- Summary stat cards ---- */
+        .stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            flex: 1;
+            min-width: 110px;
+            background: #f0f4f8;
+            border-radius: 6px;
+            padding: 12px 16px;
+            text-align: center;
+        }
+        .stat-card .value {
+            font-size: 20pt;
+            font-weight: bold;
+            color: #0056b3;
+        }
+        .stat-card .label {
+            font-size: 8pt;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-card.alert .value { color: #c0392b; }
+
+        /* ---- Section headings ---- */
+        h2 {
+            color: #0056b3;
+            font-size: 13pt;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 4px;
+            margin-top: 28px;
+        }
+        h3 {
+            color: #333;
+            font-size: 11pt;
+            margin: 12px 0 6px 0;
+        }
+
+        /* ---- Tables ---- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 9pt;
+        }
+        th {
+            background: #0056b3;
+            color: white;
+            padding: 6px 8px;
+            text-align: left;
+            font-weight: 600;
+        }
+        th.num, td.num {
+            text-align: right;
+        }
+        td {
+            padding: 5px 8px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:nth-child(even) { background: #f8f9fa; }
+        tfoot td {
+            font-weight: bold;
+            border-top: 2px solid #0056b3;
+            background: #e8edf2;
+        }
+
+        /* ---- Hourly volume bar chart ---- */
+        .chart-container {
+            margin: 16px 0 24px 0;
+        }
+        .bar-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            height: 180px;
+            border-bottom: 2px solid #333;
+            padding: 0 4px;
+        }
+        .bar-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        .bar-count {
+            font-size: 7pt;
+            color: #333;
+            margin-bottom: 2px;
+            font-weight: bold;
+        }
+        .bar-stack {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+        .bar-segment-calls {
+            background: #0056b3;
+            width: 100%;
+        }
+        .bar-segment-sms {
+            background: #28a745;
+            width: 100%;
+        }
+        .bar-label {
+            font-size: 7pt;
+            color: #555;
+            margin-top: 4px;
+            text-align: center;
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            height: 36px;
+        }
+        .chart-legend {
+            display: flex;
+            gap: 16px;
+            margin-top: 8px;
+            font-size: 8pt;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .legend-swatch {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        .legend-calls { background: #0056b3; }
+        .legend-sms { background: #28a745; }
+
+        /* ---- Missed calls highlight ---- */
+        .missed-badge {
+            display: inline-block;
+            background: #f8d7da;
+            color: #721c24;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 8pt;
+            font-weight: 600;
+        }
+
+        /* ---- Business hours note ---- */
+        .biz-hours-note {
+            font-size: 8pt;
+            color: #666;
+            font-style: italic;
+            margin-bottom: 8px;
+        }
+
+        /* ---- Footer ---- */
+        .footer {
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 8pt;
+            color: #888;
+            text-align: center;
+        }
+
+        /* ---- Page break helper ---- */
+        .page-break { page-break-before: always; }
+    </style>
+</head>
+<body>
+    <!-- ============================================================ -->
+    <!-- HEADER                                                        -->
+    <!-- ============================================================ -->
+    <div class="header">
+        <h1>Weekly Phone &amp; Messaging Report</h1>
+        <div class="subtitle">Spruce Activity Summary</div>
+        <div class="date-range">{{ week_start_date }} &ndash; {{ week_end_date }}</div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- TOP-LEVEL SUMMARY CARDS                                       -->
+    <!-- ============================================================ -->
+    {% set total_inbound_calls = per_line_stats | sum(attribute='inbound_calls') %}
+    {% set total_outbound_calls = per_line_stats | sum(attribute='outbound_calls') %}
+    {% set total_minutes = per_line_stats | sum(attribute='total_call_minutes') %}
+    {% set total_inbound_sms = per_line_stats | sum(attribute='inbound_sms') %}
+    {% set total_outbound_sms = per_line_stats | sum(attribute='outbound_sms') %}
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="value">{{ total_inbound_calls }}</div>
+            <div class="label">Inbound Calls</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ total_outbound_calls }}</div>
+            <div class="label">Outbound Calls</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ total_minutes }}</div>
+            <div class="label">Total Call Minutes</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ total_inbound_sms }}</div>
+            <div class="label">Inbound SMS</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ total_outbound_sms }}</div>
+            <div class="label">Outbound SMS</div>
+        </div>
+        <div class="stat-card alert">
+            <div class="value">{{ total_missed }}</div>
+            <div class="label">Missed (Biz Hrs)</div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SECTION 1: PER-LINE (PHONE) CALL & SMS STATS                  -->
+    <!-- ============================================================ -->
+    <h2>Activity by Phone Line</h2>
+    <p style="font-size:8pt;color:#666;">
+        Each row represents a physical phone / line in the Spruce account.
+        Map the Line ID to the person at that desk.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Line ID</th>
+                <th>Line Name</th>
+                <th class="num">Inbound Calls</th>
+                <th class="num">Outbound Calls</th>
+                <th class="num">Call Minutes</th>
+                <th class="num">Inbound SMS</th>
+                <th class="num">Outbound SMS</th>
+                <th class="num">Total Activity</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in per_line_stats %}
+            <tr>
+                <td><code>{{ line.line_id }}</code></td>
+                <td>{{ line.line_name }}</td>
+                <td class="num">{{ line.inbound_calls }}</td>
+                <td class="num">{{ line.outbound_calls }}</td>
+                <td class="num">{{ line.total_call_minutes }}</td>
+                <td class="num">{{ line.inbound_sms }}</td>
+                <td class="num">{{ line.outbound_sms }}</td>
+                <td class="num"><strong>{{ line.total_activity }}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="2">Totals</td>
+                <td class="num">{{ total_inbound_calls }}</td>
+                <td class="num">{{ total_outbound_calls }}</td>
+                <td class="num">{{ total_minutes }}</td>
+                <td class="num">{{ total_inbound_sms }}</td>
+                <td class="num">{{ total_outbound_sms }}</td>
+                <td class="num">{{ total_inbound_calls + total_outbound_calls + total_inbound_sms + total_outbound_sms }}</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <!-- ============================================================ -->
+    <!-- SECTION 2: HOURLY VOLUME BAR CHART                            -->
+    <!-- ============================================================ -->
+    <h2>Volume by Hour of Day</h2>
+    <p style="font-size:8pt;color:#666;">
+        Combined call and SMS volume across all lines, grouped by hour
+        (Central Time). Helps identify peak activity periods.
+    </p>
+    <div class="chart-container">
+        <div class="bar-chart">
+            {% for h in hourly_volume %}
+            <div class="bar-wrapper">
+                {% if h.total > 0 %}
+                <div class="bar-count">{{ h.total }}</div>
+                {% endif %}
+                <div class="bar-stack">
+                    {% if h.calls > 0 %}
+                    <div class="bar-segment-calls" style="height: {{ (h.calls / max_hourly_volume * 140)|round|int }}px;"></div>
+                    {% endif %}
+                    {% if h.sms > 0 %}
+                    <div class="bar-segment-sms" style="height: {{ (h.sms / max_hourly_volume * 140)|round|int }}px;"></div>
+                    {% endif %}
+                </div>
+                <div class="bar-label">{{ h.hour_label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="chart-legend">
+            <div class="legend-item">
+                <div class="legend-swatch legend-calls"></div>
+                <span>Calls</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-swatch legend-sms"></div>
+                <span>SMS</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SECTION 3: MISSED CALLS DURING BUSINESS HOURS                 -->
+    <!-- ============================================================ -->
+    <div class="page-break"></div>
+    <h2>Missed Calls During Business Hours</h2>
+    <div class="biz-hours-note">
+        Business hours: Mon&ndash;Thu 8:00 AM &ndash; 5:00 PM CST
+        (lunch 12:00 &ndash; 1:00 PM excluded) &bull;
+        Friday 8:00 AM &ndash; 12:00 PM CST
+    </div>
+
+    {% if missed_during_biz %}
+    {% for line in missed_during_biz %}
+    <h3>
+        {{ line.line_name }}
+        <span class="missed-badge">{{ line.missed_count }} missed</span>
+    </h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Date &amp; Time (CST)</th>
+                <th>Day</th>
+                <th>From Number</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in line.missed_details %}
+            <tr>
+                <td>{{ d.timestamp }}</td>
+                <td>{{ d.day_of_week }}</td>
+                <td>{{ d.from_number }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endfor %}
+    {% else %}
+    <p style="color:#28a745;font-weight:bold;">
+        No missed calls during business hours this week.
+    </p>
+    {% endif %}
+
+    <!-- ============================================================ -->
+    <!-- FOOTER                                                        -->
+    <!-- ============================================================ -->
+    <div class="footer">
+        Generated {{ generated_at }} | Weekly Phone &amp; Messaging Report | Confidential
+    </div>
+</body>
+</html>
