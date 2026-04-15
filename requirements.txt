@@ -4,3 +4,4 @@ APScheduler>=3.10.4
 Jinja2>=3.1.2
 weasyprint>=60.0
 pytz>=2024.1
+flask>=3.0.0

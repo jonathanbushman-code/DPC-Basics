@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 output/
 agent.log
+chatbot.log
 *.egg-info/
 dist/
 build/

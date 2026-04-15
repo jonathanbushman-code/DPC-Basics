@@ -120,3 +120,37 @@ class SpruceClient:
             attachment_ids=[media_id],
             internal=True,
         )
+
+    # ------------------------------------------------------------------
+    # Webhook management
+    # ------------------------------------------------------------------
+
+    def register_webhook(self, url: str, name: str = "reliant-dpc-chatbot") -> dict:
+        """Register a webhook endpoint with Spruce to receive events.
+
+        Args:
+            url: The publicly-accessible URL that Spruce will POST events to.
+            name: A human-readable name for this webhook endpoint.
+
+        Returns:
+            The API response containing the endpoint ID and signing secret.
+        """
+        payload = {"url": url, "name": name}
+        response = self.session.post(self.config.WEBHOOKS_ENDPOINT, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        logger.info("Webhook registered: %s -> %s", name, url)
+        return data
+
+    def list_webhooks(self) -> list[dict]:
+        """List all registered webhook endpoints."""
+        response = self.session.get(self.config.WEBHOOKS_ENDPOINT)
+        response.raise_for_status()
+        return response.json().get("endpoints", response.json())
+
+    def delete_webhook(self, endpoint_id: str) -> None:
+        """Delete a webhook endpoint by ID."""
+        url = f"{self.config.WEBHOOKS_ENDPOINT}/{endpoint_id}"
+        response = self.session.delete(url)
+        response.raise_for_status()
+        logger.info("Webhook endpoint deleted: %s", endpoint_id)
