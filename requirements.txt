@@ -4,3 +4,10 @@ APScheduler>=3.10.4
 Jinja2>=3.1.2
 weasyprint>=60.0
 pytz>=2024.1
+
+# Voice assistant dependencies
+anthropic>=0.39.0
+twilio>=9.0.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12

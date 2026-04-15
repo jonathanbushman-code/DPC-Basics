@@ -1,9 +1,22 @@
-"""Daily Clinical Analytics Summary Agent.
+"""DPC-Basics: Clinical Analytics Agent & AI Voice Assistant.
 
-This agent runs on a schedule to:
-1. Fetch today's appointments from Elation Health at 12:01 AM
-2. Generate a clinical analytics summary PDF
-3. Send the summary to a specific Spruce Health user at 7:00 AM
+This system provides two services for the practice:
+
+1. **Daily Analytics Agent** (scheduled):
+   - Fetches today's appointments from Elation Health at 12:01 AM
+   - Generates a clinical analytics summary PDF
+   - Sends the summary to a Spruce Health conversation at 7:00 AM
+
+2. **Voice Assistant** (webhook server):
+   - Answers incoming phone calls forwarded from Spruce via Twilio
+   - Uses Claude AI for natural, HIPAA-conscious conversation
+   - Logs call summaries back to Spruce for the care team
+
+Usage:
+    python main.py                  # Start the daily analytics scheduler
+    python main.py --run-once       # Run analytics fetch + send immediately
+    python main.py --voice          # Start the voice assistant server
+    python main.py --all            # Run both scheduler and voice server
 """
 
 import logging
@@ -12,6 +25,7 @@ import sys
 
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from config import ScheduleConfig, SUMMARY_OUTPUT_DIR
 from services.appointment_service import AppointmentService
@@ -85,12 +99,24 @@ def run_once():
         logger.error("No summary generated, skipping send")
 
 
-def main():
-    """Start the scheduler with the configured timezone and job times."""
-    if "--run-once" in sys.argv:
-        run_once()
-        return
+def start_voice_server():
+    """Start the AI voice assistant webhook server."""
+    import uvicorn
 
+    from voice_assistant.app import app
+    from voice_assistant.config import VoiceAssistantConfig
+
+    logger.info("Starting voice assistant server...")
+    uvicorn.run(
+        app,
+        host=VoiceAssistantConfig.HOST,
+        port=VoiceAssistantConfig.PORT,
+        log_level="info",
+    )
+
+
+def start_scheduler():
+    """Start the daily analytics scheduler (blocking)."""
     tz = pytz.timezone(ScheduleConfig.TIMEZONE)
     scheduler = BlockingScheduler(timezone=tz)
 
@@ -128,6 +154,70 @@ def main():
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Scheduler shut down")
+
+
+def start_all():
+    """Run both the analytics scheduler and voice server concurrently.
+
+    The scheduler runs in a background thread so the voice server
+    (which needs the main thread for uvicorn) can start normally.
+    """
+    import uvicorn
+
+    from voice_assistant.app import app
+    from voice_assistant.config import VoiceAssistantConfig
+
+    tz = pytz.timezone(ScheduleConfig.TIMEZONE)
+    scheduler = BackgroundScheduler(timezone=tz)
+
+    scheduler.add_job(
+        fetch_and_generate,
+        "cron",
+        hour=ScheduleConfig.FETCH_HOUR,
+        minute=ScheduleConfig.FETCH_MINUTE,
+        id="fetch_appointments",
+        name="Fetch appointments and generate summary (12:01 AM)",
+        misfire_grace_time=300,
+    )
+
+    scheduler.add_job(
+        send_summary,
+        "cron",
+        hour=ScheduleConfig.SEND_HOUR,
+        minute=ScheduleConfig.SEND_MINUTE,
+        id="send_summary",
+        name="Send summary via Spruce (7:00 AM)",
+        misfire_grace_time=300,
+    )
+
+    scheduler.start()
+    logger.info("Background scheduler started alongside voice server")
+
+    logger.info("Starting voice assistant server...")
+    uvicorn.run(
+        app,
+        host=VoiceAssistantConfig.HOST,
+        port=VoiceAssistantConfig.PORT,
+        log_level="info",
+    )
+
+
+def main():
+    """Entry point — parse CLI flags and start the appropriate services."""
+    if "--run-once" in sys.argv:
+        run_once()
+        return
+
+    if "--voice" in sys.argv:
+        start_voice_server()
+        return
+
+    if "--all" in sys.argv:
+        start_all()
+        return
+
+    # Default: analytics scheduler only
+    start_scheduler()
 
 
 if __name__ == "__main__":
