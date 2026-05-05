@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @page { size: letter landscape; margin: 0.6in; }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 10pt;
+            color: #1a1a1a;
+            line-height: 1.4;
+        }
+        .header {
+            border-bottom: 3px solid #0056b3;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+        }
+        .header h1 { color: #0056b3; font-size: 18pt; margin: 0 0 4px 0; }
+        .header .subtitle { color: #666; font-size: 11pt; }
+        .header .range { font-size: 12pt; font-weight: bold; color: #333; }
+
+        .stats-grid {
+            display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+        }
+        .stat-card {
+            flex: 1; min-width: 120px; background: #f0f4f8;
+            border-radius: 6px; padding: 10px 12px; text-align: center;
+        }
+        .stat-card .value { font-size: 20pt; font-weight: bold; color: #0056b3; }
+        .stat-card .label { font-size: 8pt; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card.alert .value { color: #c0392b; }
+
+        h2 {
+            color: #0056b3; font-size: 13pt;
+            border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 18px;
+        }
+        table {
+            width: 100%; border-collapse: collapse;
+            margin-bottom: 14px; font-size: 9pt;
+        }
+        th {
+            background: #0056b3; color: white;
+            padding: 6px 8px; text-align: left; font-weight: 600;
+        }
+        td { padding: 5px 8px; border-bottom: 1px solid #e0e0e0; }
+        tr:nth-child(even) { background: #f8f9fa; }
+        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .missed { color: #c0392b; font-weight: 600; }
+        .chart-wrap { text-align: center; margin: 8px 0 16px; }
+        .chart-wrap img { max-width: 100%; height: auto; }
+        .footer {
+            margin-top: 24px; padding-top: 8px; border-top: 1px solid #ddd;
+            font-size: 8pt; color: #888; text-align: center;
+        }
+        .empty { color: #777; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>SPRUS Weekly Call &amp; Messaging Report</h1>
+        <div class="subtitle">Per-phone dashboard for incoming/outgoing calls and SMS</div>
+        <div class="range">{{ week_start }} &mdash; {{ week_end }}</div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card alert">
+            <div class="value">{{ totals.missed_calls }}</div>
+            <div class="label">Missed (Business Hrs)</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ totals.incoming_calls }}</div>
+            <div class="label">Incoming Calls</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ totals.outgoing_calls }}</div>
+            <div class="label">Outgoing Calls</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ totals.total_call_minutes }}m</div>
+            <div class="label">Total Talk Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ totals.incoming_sms }}</div>
+            <div class="label">Incoming SMS</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ totals.outgoing_sms }}</div>
+            <div class="label">Outgoing SMS</div>
+        </div>
+    </div>
+
+    <h2>Hourly Call Volume (Business Hours)</h2>
+    <div class="chart-wrap">
+        <img src="{{ chart_data_uri }}" alt="Hourly call volume chart">
+    </div>
+
+    <h2>Per-Phone Breakdown</h2>
+    {% if per_phone %}
+    <table>
+        <tr>
+            <th>Phone / Line</th>
+            <th>Employee</th>
+            <th class="num">Missed (Biz Hrs)</th>
+            <th class="num">Incoming Calls</th>
+            <th class="num">Outgoing Calls</th>
+            <th class="num">Talk Time (min)</th>
+            <th class="num">Incoming SMS</th>
+            <th class="num">Outgoing SMS</th>
+        </tr>
+        {% for row in per_phone %}
+        <tr>
+            <td>{{ row.label }}<br><small style="color:#888;">id: {{ row.phone_id }}</small></td>
+            <td>{{ row.employee or "—" }}</td>
+            <td class="num {% if row.missed_calls %}missed{% endif %}">{{ row.missed_calls }}</td>
+            <td class="num">{{ row.incoming_calls }}</td>
+            <td class="num">{{ row.outgoing_calls }}</td>
+            <td class="num">{{ row.total_call_minutes }}</td>
+            <td class="num">{{ row.incoming_sms }}</td>
+            <td class="num">{{ row.outgoing_sms }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="empty">No call or SMS activity recorded for this period.</p>
+    {% endif %}
+
+    <h2>By Provider (Patient&rsquo;s Assigned Provider)</h2>
+    {% if by_provider %}
+    <table>
+        <tr>
+            <th>Provider</th>
+            <th class="num">Missed</th>
+            <th class="num">Incoming Calls</th>
+            <th class="num">Outgoing Calls</th>
+            <th class="num">Total Calls</th>
+            <th class="num">Incoming SMS</th>
+            <th class="num">Outgoing SMS</th>
+            <th class="num">Total SMS</th>
+        </tr>
+        {% for row in by_provider %}
+        <tr>
+            <td>{{ row.provider }}</td>
+            <td class="num {% if row.missed_calls %}missed{% endif %}">{{ row.missed_calls }}</td>
+            <td class="num">{{ row.incoming_calls }}</td>
+            <td class="num">{{ row.outgoing_calls }}</td>
+            <td class="num">{{ row.total_calls }}</td>
+            <td class="num">{{ row.incoming_sms }}</td>
+            <td class="num">{{ row.outgoing_sms }}</td>
+            <td class="num">{{ row.total_sms }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="empty">No provider data available.</p>
+    {% endif %}
+
+    <div class="footer">
+        Business hours: Mon&ndash;Thu 8:00&ndash;12:00, 13:00&ndash;17:00 &bull; Fri 8:00&ndash;12:00 &bull;
+        Generated {{ generated_at }} &bull; Confidential
+    </div>
+</body>
+</html>

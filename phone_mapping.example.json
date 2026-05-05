@@ -1,0 +1,14 @@
+{
+  "REPLACE_WITH_PHONE_ID_1": {
+    "name": "Front Desk - Line 1",
+    "employee": "Jane Doe"
+  },
+  "REPLACE_WITH_PHONE_ID_2": {
+    "name": "Triage Nurse",
+    "employee": "John Smith"
+  },
+  "REPLACE_WITH_PHONE_ID_3": {
+    "name": "Billing",
+    "employee": "Sam Lee"
+  }
+}

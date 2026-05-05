@@ -1,9 +1,13 @@
-"""Daily Clinical Analytics Summary Agent.
+"""Scheduled agents for DPC-Basics.
 
-This agent runs on a schedule to:
-1. Fetch today's appointments from Elation Health at 12:01 AM
-2. Generate a clinical analytics summary PDF
-3. Send the summary to a specific Spruce Health user at 7:00 AM
+Daily clinical analytics:
+1. 12:01 AM - fetch today's appointments from Elation, generate the summary
+2. 7:00 AM  - send the summary to a Spruce conversation
+
+Weekly SPRUS dashboard:
+3. Mon 7:00 AM (configurable) - pull last 7 days of Spruce call/SMS activity,
+   render a per-phone + per-provider report with an hourly call-volume chart,
+   and deliver it to a Spruce conversation.
 """
 
 import logging
@@ -13,10 +17,11 @@ import sys
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-from config import ScheduleConfig, SUMMARY_OUTPUT_DIR
+from config import ScheduleConfig, WeeklyReportConfig
 from services.appointment_service import AppointmentService
 from services.analytics_service import AnalyticsService
 from services.notification_service import NotificationService
+from services.weekly_report_service import WeeklyReportService
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,9 +80,19 @@ def send_summary():
         logger.exception("Failed to send summary via Spruce")
 
 
+def run_weekly_report():
+    """Weekly job: SPRUS call/SMS dashboard for the previous 7 days."""
+    logger.info("=== Starting SPRUS weekly report ===")
+    try:
+        WeeklyReportService().run(send=True)
+        logger.info("Weekly report delivered")
+    except Exception:
+        logger.exception("Failed to generate or deliver weekly report")
+
+
 def run_once():
-    """Run both steps immediately (for testing or manual execution)."""
-    logger.info("Running in single-execution mode")
+    """Run both daily steps immediately (for testing or manual execution)."""
+    logger.info("Running daily flow in single-execution mode")
     fetch_and_generate()
     if _daily_summary_path:
         send_summary()
@@ -89,6 +104,14 @@ def main():
     """Start the scheduler with the configured timezone and job times."""
     if "--run-once" in sys.argv:
         run_once()
+        return
+    if "--weekly-once" in sys.argv:
+        # Render and deliver the weekly report immediately
+        run_weekly_report()
+        return
+    if "--weekly-dry-run" in sys.argv:
+        # Render the weekly report but do not deliver it
+        WeeklyReportService().run(send=False)
         return
 
     tz = pytz.timezone(ScheduleConfig.TIMEZONE)
@@ -114,12 +137,27 @@ def main():
         misfire_grace_time=300,
     )
 
+    scheduler.add_job(
+        run_weekly_report,
+        "cron",
+        day_of_week=WeeklyReportConfig.DAY_OF_WEEK,
+        hour=WeeklyReportConfig.HOUR,
+        minute=WeeklyReportConfig.MINUTE,
+        id="weekly_sprus_report",
+        name="SPRUS weekly call/SMS dashboard",
+        misfire_grace_time=600,
+    )
+
     logger.info(
-        "Scheduler started. Fetch at %02d:%02d, Send at %02d:%02d (%s)",
+        "Scheduler started. Daily: fetch %02d:%02d, send %02d:%02d. "
+        "Weekly: %s %02d:%02d (%s)",
         ScheduleConfig.FETCH_HOUR,
         ScheduleConfig.FETCH_MINUTE,
         ScheduleConfig.SEND_HOUR,
         ScheduleConfig.SEND_MINUTE,
+        WeeklyReportConfig.DAY_OF_WEEK,
+        WeeklyReportConfig.HOUR,
+        WeeklyReportConfig.MINUTE,
         ScheduleConfig.TIMEZONE,
     )
     logger.info("Press Ctrl+C to exit")
